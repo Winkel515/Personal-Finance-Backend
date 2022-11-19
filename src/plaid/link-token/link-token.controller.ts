@@ -41,4 +41,9 @@ export class LinkTokenController {
       message: 'success',
     };
   }
+
+  @Get('/test')
+  async test() {
+    return await this.plaidService.getUsers();
+  }
 }

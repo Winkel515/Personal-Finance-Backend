@@ -1,6 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import * as dotenv from 'dotenv';
+import { Pool } from 'pg';
 import { PlaidApi, Configuration, PlaidEnvironments } from 'plaid';
+import { PG_CONNECTION } from 'src/constants';
 
 dotenv.config();
 
@@ -19,9 +21,23 @@ const configuration = new Configuration({
 
 @Injectable()
 export class PlaidService {
+  constructor(
+    @Inject(PG_CONNECTION)
+    private conn: Pool,
+  ) {}
+
   private readonly plaidClient = new PlaidApi(configuration);
 
   getPlaidClient() {
     return this.plaidClient;
   }
+
+  async getUsers() {
+    const res = await this.conn.query('SELECT * FROM "user"');
+    console.log(res);
+    return res.rows;
+  }
+  // async setAccessToken() {
+
+  // }
 }
