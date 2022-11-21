@@ -1,8 +1,15 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import * as dotenv from 'dotenv';
-import { Pool } from 'pg';
-import { PlaidApi, Configuration, PlaidEnvironments } from 'plaid';
-import { PG_CONNECTION } from 'src/constants';
+import {
+  PlaidApi,
+  Configuration,
+  PlaidEnvironments,
+  LinkTokenCreateRequest,
+  Products,
+  CountryCode,
+  TransactionsGetRequest,
+} from 'plaid';
+import { DbService } from 'src/db/db.service';
 
 dotenv.config();
 
@@ -21,23 +28,67 @@ const configuration = new Configuration({
 
 @Injectable()
 export class PlaidService {
-  constructor(
-    @Inject(PG_CONNECTION)
-    private conn: Pool,
-  ) {}
-
+  constructor(private dbService: DbService) {}
   private readonly plaidClient = new PlaidApi(configuration);
 
-  getPlaidClient() {
-    return this.plaidClient;
+  async getLinkToken(userId: string) {
+    const request: LinkTokenCreateRequest = {
+      user: {
+        client_user_id: userId.toString(),
+      },
+      client_name: 'Plaid Quickstart',
+      products: [Products.Transactions],
+      country_codes: [CountryCode.Ca],
+      language: 'en',
+    };
+
+    const response = await this.plaidClient.linkTokenCreate(request);
+    return response.data.link_token;
   }
 
-  async getUsers() {
-    const res = await this.conn.query('SELECT * FROM "user"');
-    console.log(res);
-    return res.rows;
-  }
-  // async setAccessToken() {
+  async setAccessToken(userId: string, publicToken: string) {
+    try {
+      const tokenResponse = await this.plaidClient.itemPublicTokenExchange({
+        public_token: publicToken,
+      });
 
-  // }
+      const { access_token } = tokenResponse.data;
+
+      await this.dbService.setAccessToken(userId, access_token);
+    } catch (err) {
+      throw new HttpException('Bad Request', HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  async getTransactions(accessToken: string) {
+    const request: TransactionsGetRequest = {
+      access_token: accessToken,
+      start_date: '2022-01-01',
+      end_date: '2022-12-31',
+    };
+    const response = await this.plaidClient.transactionsGet(request);
+    let transactions = response.data.transactions;
+    const total_transactions = response.data.total_transactions;
+    // Manipulate the offset parameter to paginate
+    // transactions and retrieve all available data
+    while (transactions.length < total_transactions) {
+      const paginatedRequest: TransactionsGetRequest = {
+        access_token: accessToken,
+        start_date: '2022-01-01',
+        end_date: '2022-12-31',
+        options: {
+          offset: transactions.length,
+        },
+      };
+      const paginatedResponse = await this.plaidClient.transactionsGet(
+        paginatedRequest,
+      );
+
+      transactions = transactions.concat(paginatedResponse.data.transactions);
+    }
+    return transactions.map((x) => {
+      const { amount, name, date, category } = x;
+      return { amount, name, date, category };
+    });
+  }
 }

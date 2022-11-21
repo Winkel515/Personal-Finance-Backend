@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { LinkTokenController } from './link-token.controller';
+import { LinkTokenController } from './link.controller';
 
 describe('LinkTokenController', () => {
   let controller: LinkTokenController;
